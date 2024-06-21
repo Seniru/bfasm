@@ -1,7 +1,7 @@
 all: bf
 
 bf:
-	gcc -x assembler -c bf.s && ld -o bf bf.o
+	gcc -x assembler -c src/main.s && ld -o bf main.o
 
 clean:
-	rm bf bf.o
+	rm bf main.o
