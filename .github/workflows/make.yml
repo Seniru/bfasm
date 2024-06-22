@@ -18,5 +18,7 @@ jobs:
         needs: build
         steps:
             - uses: actions/checkout@v4
+            - name: Set script permissions
+              run: chmod +x ./test/test.sh
             - name: Test
               run: make test            
