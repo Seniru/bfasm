@@ -150,10 +150,32 @@ move_left:
     jmp         __interpret_done_step
 
 loop_begin:
-    /* TODO: enter only if the cell is not zero
-    skip the body if it's zero */
+    xor         rcx, rcx
+    cmp         byte ptr [r14], 0
+    je          skip_loop
     push        rsi
     jmp         __interpret_done_step
+
+skip_loop:
+    lodsb
+    cmp         al, '['
+    je          skip_new_loop_begin
+    cmp         al, ']'
+    je          close_loop
+__skip_loop_cont:
+    jmp         skip_loop
+
+skip_new_loop_begin:
+    inc         rcx
+    jmp         __skip_loop_cont
+
+close_loop:
+    dec         rcx
+    dec         rsi
+    cmp         rcx, 0
+    je          __interpret_done_step
+    inc         rsi
+    jmp         __skip_loop_cont
 
 loop_end:
     cmp         byte ptr [r14], 0
@@ -171,9 +193,11 @@ jump_out:
 
 write:
     push        rsi
+    push        rcx
     mov         r12, r14
     mov         r13, 1
     call        print_string
+    pop         rcx
     pop         rsi
     jmp         __interpret_done_step
 
