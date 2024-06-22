@@ -8,7 +8,7 @@ bf:
 
 test: bf
 	@echo "Starting tests..."
-	./test./test.sh
+	./test/test.sh
 
 clean:
 	rm bf main.o
