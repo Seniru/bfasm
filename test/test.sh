@@ -37,3 +37,10 @@ test "./bf ./test/arithmetic.bf" $'8\n2\n8\n4'
 echo -en "\n\nTests done. "
 echo -en "$failed tests failed. "
 echo -en "Test score: $(($all-$failed))/$all\n"
+
+if [ $failed -gt 0 ];
+then
+    exit 1
+else
+    exit 0
+fi
