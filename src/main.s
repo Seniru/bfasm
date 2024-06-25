@@ -1,6 +1,7 @@
 .intel_syntax noprefix
 
 .include "src/system.s"
+.include "src/string.s"
 .include "src/print.s"
 
 .global _start
@@ -15,9 +16,21 @@
     call        print_signed_int
 .endm
 
+.macro is_flag flagname
+    lea         r13, \flagname
+    push        rcx
+    call        strcmp
+    pop         rcx
+    cmp         rax, TRUE
+.endm
+
 .data
 
-help:               .ascii "Brainfuck interpreter\nUsage: ./bf [file]\n"
+help:               .ascii "Brainfuck interpreter\n"
+                    .ascii "Usage: ./bf [--file filename | --code code]\n"
+                    .ascii "Options:\n"
+                    .ascii "-f, --file filename :\tRead the code from the file\n"
+                    .ascii "-c, --code code :\tProgram passed in as a string\n"
 helpLen             = $ - help
 filenotfound:       .ascii "File not found.\n"
 filenotfoundLen     = $ - filenotfound
@@ -25,8 +38,19 @@ runComplete:        .ascii "\nProgram completed!\n"
 runCompleteLen      = $ - runComplete
 inputPrompt:        .ascii "\nProgram input: "
 inputPromptLen      = $ - inputPrompt
+errAmbigiousFlag:   .ascii "Error: Ambibious flag\n"
+errAmbigiousFlagLen = $ - errAmbigiousFlag
+errUnknownFlag:     .ascii "Error: Unknown flag\n"
+errUnknownFlagLen   = $ - errUnknownFlag
+errInvalidArg:      .ascii "Error: Invalid argument\n"
+errInvalidArgLen    = $ - errInvalidArg
 bufferSize:         .quad BUFFER_SIZE
-
+fileFlagName1:      .asciz "-f"
+fileFlagName2:      .asciz "--file"
+codeFlagName1:      .asciz "-c"
+codeFlagName2:      .asciz "--code"
+fileFlagSet:        .byte 0
+codeFlagSet:        .byte 0
 
 .bss
 
@@ -34,6 +58,8 @@ bufferSize:         .quad BUFFER_SIZE
 .lcomm fileDesc SIZE_OF_INT
 .lcomm fileBuffer SIZE_OF_POINTER
 .lcomm inputBuffer 1
+.lcomm fileFlag SIZE_OF_POINTER
+.lcomm codeFlag SIZE_OF_POINTER
 
 .text
 
@@ -49,11 +75,15 @@ _start:
     /* argc */
     cmp         qword ptr [rsp + 8], 1
     je          print_help
-    /* file name */
-    mov         rdi, [rsp + 24]
-    call        open_file
-    call        read_file
-    call        close_file
+
+    call        parse_args
+
+    cmp         byte ptr [fileFlagSet], TRUE
+    je          handle_file
+    cmp         byte ptr [codeFlagSet], TRUE
+    je          handle_code
+
+__main_cont:
     call        interpret
     jmp         exit
 
@@ -63,8 +93,88 @@ print_help:
     call        print_string
     jmp         exit
 
+parse_args:
+    mov         rcx, 1
+parse_args_loop:
+    mov         rsi, qword ptr [rsp + 24 + rcx * SIZE_OF_POINTER]
+    lodsb
+    cmp         al, '-'
+    je          set_flag
+    jmp         invalid_argument
+__parse_args_loop_cont:
+    inc         rcx
+    cmp         rcx, qword ptr [rsp + 16]
+    jl          parse_args_loop
+    ret
+
+set_flag:
+    mov         r12, qword ptr [rsp + 24 + rcx * SIZE_OF_POINTER]
+    is_flag     [fileFlagName1]
+    je          set_file_flag
+    is_flag     [fileFlagName2]
+    je          set_file_flag
+    is_flag     [codeFlagName1]
+    je          set_code_flag
+    is_flag     [codeFlagName2]
+    je          set_code_flag
+    jmp         unknown_flag
+
+set_file_flag:
+    cmp         byte ptr [fileFlagSet], TRUE
+    je          ambigious_flag
+    cmp         byte ptr [codeFlagSet], TRUE
+    je          ambigious_flag
+    mov         byte ptr [fileFlagSet], TRUE
+    inc         rcx
+    mov         rax, qword ptr [rsp + 24 + rcx * SIZE_OF_POINTER]
+    mov         qword ptr [fileFlag], rax     
+    jmp         __parse_args_loop_cont
+
+set_code_flag:
+    cmp         byte ptr [fileFlagSet], TRUE
+    je          ambigious_flag
+    cmp         byte ptr [codeFlagSet], TRUE
+    je          ambigious_flag
+    mov         byte ptr [codeFlagSet], TRUE
+    inc         rcx
+    mov         rax, qword ptr [rsp + 24 + rcx * SIZE_OF_POINTER]
+    mov         qword ptr [codeFlag], rax
+    jmp         __parse_args_loop_cont
+
+ambigious_flag:
+    lea         r12, [errAmbigiousFlag]
+    mov         r13, errAmbigiousFlagLen
+    call        print_string
+    jmp         exit
+
+unknown_flag:
+    lea         r12, [errUnknownFlag]
+    mov         r13, errUnknownFlagLen
+    call        print_string
+    jmp         exit
+
+invalid_argument:
+    lea         r12, [errInvalidArg]
+    mov         r13, errInvalidArgLen
+    call        print_string
+    jmp         exit
+
+handle_code:
+    mov        rsi, qword ptr [codeFlag]
+    jmp         __main_cont
+
+handle_file:
+    /* file name */
+    mov         rdi, qword ptr [fileFlag]
+    # mov         rdi, [rdi]
+    call        open_file
+    call        read_file
+    call        close_file
+    jmp         __main_cont
+
 open_file:
     mov         rax, SYS_OPEN
+    xor         rsi, rsi
     mov         rdx, O_RDONLY
     syscall
     cmp         rax, ENOENT

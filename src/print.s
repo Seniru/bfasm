@@ -4,46 +4,13 @@
 
 negative:       .ascii "-"
 
-.text
-
-.intel_syntax noprefix
-
-.global strlen
 .global print_string
 .global print_usigned_int
 .global print_signed_int
 .global printf
 
-/*
-    Get length of a zero-delimitered string
 
-    Inputs:
-        rsi: string
-
-    Modifies:
-        rax, rcx
-
-    Output registers:
-        rax: length
-*/
-strlen:
-    push        rcx
-    push        rsi
-    xor         rax, rax
-    xor         rcx, rcx
-
-strlen_loop:
-    inc         rcx
-    lodsb
-    cmp         al, 0
-    jne         strlen_loop
-    /* if al == '\0' */
-    mov         rax, rcx
-    pop         rsi
-    pop         rcx
-    /* substract the null terminator character from the count */
-    dec         rax
-    ret
+.text
 
 /*
     Abstraction for write syscall.

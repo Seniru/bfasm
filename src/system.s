@@ -1,6 +1,8 @@
 .intel_syntax noprefix
 
 .equ NULL,                  0
+.equ FALSE,                 0
+.equ TRUE,                  1
 .equ STDIN,                 0
 .equ STDOUT,                1
 .equ NULL_TERMINATOR,       0
