@@ -20,6 +20,7 @@
 .equ SYS_LSEEK,				8
 .equ SYS_MMAP,              9
 .equ SYS_MUNMAP,            11
+.equ SYS_IOCTL,             16
 .equ SYS_EXIT,              60
 
 /*  flags, options, etc. */
@@ -31,6 +32,8 @@
 .equ SEEK_SET,				0
 .equ SEEK_END,				2
 .equ ENOENT,				-2
+.equ TIOCGWINSZ,            0x5413
+
 
 .global malloc
 .global free

@@ -16,6 +16,35 @@
     call        print_signed_int
 .endm
 
+.macro printchar character
+    pushr   r12, r13, rax, rbx, rcx, rdx, rsi, rdi
+    lea     r12, \character
+    mov     r13, 1
+    call    print_string
+    popr    rdi, rsi, rdx, rcx, rbx, rax, r13, r12
+.endm
+
+.macro printunicode character
+    pushr   r12, r13, rax, rbx, rcx, rdx, rsi, rdi
+    lea     r12, \character
+    mov     r13, 3
+    call    print_string
+    popr    rdi, rsi, rdx, rcx, rbx, rax, r13, r12
+.endm
+
+.macro printunicode_nopreserve character
+    lea     r12, \character
+    mov     r13, 3
+    call    print_string
+
+.endm
+
+.macro printchar_nopreserve character
+    lea     r12, \character
+    mov     r13, 1
+    call    print_string
+.endm
+
 .macro is_flag flagname
     lea         r13, \flagname
     push        rcx
@@ -27,11 +56,13 @@
 .data
 
 help:               .ascii "Brainfuck interpreter\n"
-                    .ascii "Usage: ./bf [--file filename | --code code]\n"
-                    .ascii "Options:\n"
+                    .ascii "Usage: ./bf [options] [--file filename | --code code]\n"
                     .ascii "-f, --file filename :\tRead the code from the file\n"
                     .ascii "-c, --code code :\tProgram passed in as a string\n"
+                    .ascii "\nOptions:\n"
+                    .ascii "-d, --debug :\tStart the program in the debugging mode\n"
 helpLen             = $ - help
+
 filenotfound:       .ascii "File not found.\n"
 filenotfoundLen     = $ - filenotfound
 runComplete:        .ascii "\nProgram completed!\n"
@@ -44,13 +75,39 @@ errUnknownFlag:     .ascii "Error: Unknown flag\n"
 errUnknownFlagLen   = $ - errUnknownFlag
 errInvalidArg:      .ascii "Error: Invalid argument\n"
 errInvalidArgLen    = $ - errInvalidArg
+
+codeLabel:          .ascii "[Code]"
+codeLabelLen        = $ - codeLabel
+memoryLabel:        .ascii "[Memory]"
+memoryLabelLen      = $ - memoryLabel
+outputLabel:        .ascii "[Output]"
+outputLabelLen      = $ - outputLabel
+
+partition.horizontalwall:     .byte 0xe2, 0x94, 0x80 # ─
+partition.verticalwall:       .byte 0xe2, 0x94, 0x82 # │
+partition.topleftwall:        .byte 0xe2, 0x94, 0x8c # ┌
+partition.toprightwall:       .byte 0xe2, 0x94, 0x90 # ┐
+partition.bottomleftwall:     .byte 0xe2, 0x94, 0x94 # └
+partition.bottomrightwall:    .byte 0xe2, 0x94, 0x98 # ┘
+
 bufferSize:         .quad BUFFER_SIZE
+
 fileFlagName1:      .asciz "-f"
 fileFlagName2:      .asciz "--file"
 codeFlagName1:      .asciz "-c"
 codeFlagName2:      .asciz "--code"
-fileFlagSet:        .byte 0
-codeFlagSet:        .byte 0
+debugFlagName1:     .asciz "-d"
+debugFlagName2:     .asciz "--debug"
+
+fileFlagSet:        .byte FALSE
+codeFlagSet:        .byte FALSE
+debugFlagSet:       .byte FALSE
+
+smcup:              .ascii "\033[?1049h"
+rmcup:              .ascii "\033[?1049l"
+clr:                .ascii "\033[2J\033[H"
+newline:            .ascii "\n"
+
 
 .bss
 
@@ -60,6 +117,9 @@ codeFlagSet:        .byte 0
 .lcomm inputBuffer 1
 .lcomm fileFlag SIZE_OF_POINTER
 .lcomm codeFlag SIZE_OF_POINTER
+.lcomm winsize 2 * SIZE_OF_SHORT
+.lcomm panelHeight SIZE_OF_SHORT /* floor(winsize.columns / 3) */
+
 
 .text
 
@@ -83,9 +143,16 @@ _start:
     cmp         byte ptr [codeFlagSet], TRUE
     je          handle_code
 
-__main_cont:
+__main_cont1:
+    cmp         byte ptr [debugFlagSet], TRUE
+    je          debug
+__main_cont2:
     call        interpret
     jmp         exit
+
+debug:
+    call        init_debug_window
+    jmp         __main_cont2
 
 print_help:
     lea         r12, [help]
@@ -117,6 +184,10 @@ set_flag:
     je          set_code_flag
     is_flag     [codeFlagName2]
     je          set_code_flag
+    is_flag     [debugFlagName1]
+    je          set_debug_flag
+    is_flag     [debugFlagName2]
+    je          set_debug_flag
     jmp         unknown_flag
 
 set_file_flag:
@@ -141,6 +212,10 @@ set_code_flag:
     mov         qword ptr [codeFlag], rax
     jmp         __parse_args_loop_cont
 
+set_debug_flag:
+    mov         byte ptr [debugFlagSet], TRUE
+    jmp         __parse_args_loop_cont
+
 ambigious_flag:
     lea         r12, [errAmbigiousFlag]
     mov         r13, errAmbigiousFlagLen
@@ -159,9 +234,146 @@ invalid_argument:
     call        print_string
     jmp         exit
 
+init_debug_window:
+    mov         rax, SYS_IOCTL
+    mov         rdi, STDIN
+    mov         rsi, TIOCGWINSZ
+    lea         rdx, [winsize]
+    syscall
+
+    xor         rax, rax
+    xor         rbx, rbx
+    xor         rdx, rdx
+    mov         ax, [winsize]
+    mov         bx, 3
+    div         bx
+    mov         [panelHeight], al
+
+    call        draw_debug_window
+    ret
+
+draw_debug_window:
+    lea         r12, [smcup]
+    mov         r13, 8
+    call        print_string
+    lea         r12, [clr]
+    mov         r13, 7
+    call        print_string
+
+    call        draw_memory_panel
+    printchar   [newline]
+    call        draw_code_panel
+    printchar   [newline]
+    call        draw_output_panel
+    /* wait for input */
+    push        rsi
+    malloc      1
+    mov         rsi, rax
+    mov         rax, SYS_READ
+    mov         rdi, STDIN
+    mov         rdx, 1
+    syscall
+    pop         rsi
+    ret
+
+draw_code_panel:
+    printunicode_nopreserve [partition.topleftwall]
+    printunicode_nopreserve [partition.horizontalwall]
+    lea         r12, [codeLabel]
+    mov         r13, codeLabelLen
+    call        print_string
+    /* calculate how much columns left to fill */
+    xor         rcx, rcx
+    mov         cx, word ptr [winsize + 2]
+    sub         cx, codeLabelLen
+    sub         cx, 3
+draw_code_panel_topwall_loop:
+    push        rcx
+    printunicode_nopreserve [partition.horizontalwall]
+    pop         rcx
+    loop        draw_code_panel_topwall_loop
+    printunicode_nopreserve [partition.toprightwall]
+    printchar   [newline]
+    
+    printunicode_nopreserve [partition.bottomleftwall]
+    xor         rcx, rcx
+    mov         cx, word ptr [winsize + 2]
+    sub         cx, 2
+draw_code_panel_bottomwall_loop:
+    push        rcx
+    printunicode_nopreserve [partition.horizontalwall]
+    pop         rcx
+    loop        draw_code_panel_bottomwall_loop
+    printunicode_nopreserve [partition.bottomrightwall]
+    ret
+
+draw_memory_panel:
+    printunicode_nopreserve [partition.topleftwall]
+    printunicode_nopreserve [partition.horizontalwall]
+    lea         r12, [memoryLabel]
+    mov         r13, memoryLabelLen
+    call        print_string
+    /* calculate how much columns left to fill */
+    xor         rcx, rcx
+    mov         cx, word ptr [winsize + 2]
+    sub         cx, memoryLabelLen
+    sub         cx, 3
+draw_memory_panel_topwall_loop:
+    push        rcx
+    printunicode_nopreserve [partition.horizontalwall]
+    pop         rcx
+    loop        draw_memory_panel_topwall_loop
+    printunicode_nopreserve [partition.toprightwall]
+    printchar   [newline]
+    
+    printunicode_nopreserve [partition.bottomleftwall]
+    xor         rcx, rcx
+    mov         cx, word ptr [winsize + 2]
+    sub         cx, 2
+draw_memory_panel_bottomwall_loop:
+    push        rcx
+    printunicode_nopreserve [partition.horizontalwall]
+    pop         rcx
+    loop        draw_memory_panel_bottomwall_loop
+    printunicode_nopreserve [partition.bottomrightwall]
+    ret
+
+
+draw_output_panel:
+    printunicode_nopreserve [partition.topleftwall]
+    printunicode_nopreserve [partition.horizontalwall]
+    lea         r12, [outputLabel]
+    mov         r13, outputLabelLen
+    call        print_string
+    /* calculate how much columns left to fill */
+    xor         rcx, rcx
+    mov         cx, word ptr [winsize + 2]
+    sub         cx, outputLabelLen
+    sub         cx, 3
+draw_output_panel_topwall_loop:
+    push        rcx
+    printunicode_nopreserve [partition.horizontalwall]
+    pop         rcx
+    loop        draw_output_panel_topwall_loop
+    printunicode_nopreserve [partition.toprightwall]
+    printchar   [newline]
+    
+    printunicode_nopreserve [partition.bottomleftwall]
+    xor         rcx, rcx
+    mov         cx, word ptr [winsize + 2]
+    sub         cx, 2
+draw_output_panel_bottomwall_loop:
+    push        rcx
+    printunicode_nopreserve [partition.horizontalwall]
+    pop         rcx
+    loop        draw_output_panel_bottomwall_loop
+    printunicode_nopreserve [partition.bottomrightwall]
+    ret
+
+
 handle_code:
     mov        rsi, qword ptr [codeFlag]
-    jmp         __main_cont
+    jmp         __main_cont1
 
 handle_file:
     /* file name */
@@ -170,7 +382,7 @@ handle_file:
     call        open_file
     call        read_file
     call        close_file
-    jmp         __main_cont
+    jmp         __main_cont1
 
 open_file:
     mov         rax, SYS_OPEN
@@ -331,8 +543,18 @@ read:
     jmp         __interpret_done_step
 
 
+reset_terminal:
+    lea         r12, [rmcup]
+    mov         r13, 9
+    call        print_string
+    jmp         __end_of_file_cont
+
 end_of_file:
+    cmp         byte ptr [debugFlagSet], TRUE
+    je          reset_terminal
+__end_of_file_cont:
     lea         r12, [runComplete]
     mov         r13, runCompleteLen
     call        print_string
+    
     jmp         exit
