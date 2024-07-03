@@ -91,6 +91,7 @@ partition.bottomleftwall:     .byte 0xe2, 0x94, 0x94 # └
 partition.bottomrightwall:    .byte 0xe2, 0x94, 0x98 # ┘
 
 bufferSize:         .quad BUFFER_SIZE
+currentProcess:     .quad 0
 
 fileFlagName1:      .asciz "-f"
 fileFlagName2:      .asciz "--file"
@@ -107,6 +108,21 @@ smcup:              .ascii "\033[?1049h"
 rmcup:              .ascii "\033[?1049l"
 clr:                .ascii "\033[2J\033[H"
 newline:            .ascii "\n"
+
+/*
+struct sigaction {
+    void        (*sa_handler)(int);
+    void        (*sa_sigaction)(int, siginfo_t *, void *);
+    sigset_t    sa_mask;
+    int         sa_flags;
+    void        (*sa_restorer)(void);
+};
+*/
+sigaction_winch:
+    .quad init_debug_window
+    .quad 0x04000000
+    .quad winch_restorer
+    .quad 
 
 
 .bss
@@ -151,8 +167,44 @@ __main_cont2:
     jmp         exit
 
 debug:
+    push        rsi
+    lea         r12, [smcup]
+    mov         r13, 8
+    call        print_string
+
+    mov         rax, SYS_RT_SIGACTION
+    mov         rdi, SIG_WINCH
+    lea         rsi, [sigaction_winch]
+    xor         rdx, rdx
+    mov         r10, 0x08
+    syscall
+    pop         rsi
+
     call        init_debug_window
+    mov         rax, SYS_FORK
+    syscall
+
+    mov         [currentProcess], rax
+
+    cmp         qword ptr [currentProcess], 0
+    je          input_process
+win_resize_listener:
+    pop         rsi
+    mov         rax, SYS_PAUSE
+    syscall
+    jmp         win_resize_listener
+
     jmp         __main_cont2
+
+input_process:
+    push        rsi
+    malloc      1
+    mov         rsi, rax
+    mov         rax, SYS_READ
+    mov         rdi, STDIN
+    mov         rdx, 1
+    syscall
+    jmp         input_process
 
 print_help:
     lea         r12, [help]
@@ -234,7 +286,7 @@ invalid_argument:
     call        print_string
     jmp         exit
 
-init_debug_window:
+update_dimensions:
     mov         rax, SYS_IOCTL
     mov         rdi, STDIN
     mov         rsi, TIOCGWINSZ
@@ -248,14 +300,17 @@ init_debug_window:
     mov         bx, 3
     div         bx
     mov         [panelHeight], al
+    ret
 
+init_debug_window:
+    call        update_dimensions
+    cmp         qword ptr [currentProcess], 0
+    jne          __skip_draw
     call        draw_debug_window
+__skip_draw:
     ret
 
 draw_debug_window:
-    lea         r12, [smcup]
-    mov         r13, 8
-    call        print_string
     lea         r12, [clr]
     mov         r13, 7
     call        print_string
@@ -265,15 +320,6 @@ draw_debug_window:
     call        draw_code_panel
     printchar   [newline]
     call        draw_output_panel
-    /* wait for input */
-    push        rsi
-    malloc      1
-    mov         rsi, rax
-    mov         rax, SYS_READ
-    mov         rdi, STDIN
-    mov         rdx, 1
-    syscall
-    pop         rsi
     ret
 
 draw_code_panel:
@@ -542,12 +588,17 @@ read:
     pop         rsi
     jmp         __interpret_done_step
 
-
 reset_terminal:
     lea         r12, [rmcup]
     mov         r13, 9
     call        print_string
     jmp         __end_of_file_cont
+
+winch_restorer:
+    mov         rax, SYS_RT_SIGRETURN
+    xor         rdi, rdi
+    syscall
+    ret
 
 end_of_file:
     cmp         byte ptr [debugFlagSet], TRUE
