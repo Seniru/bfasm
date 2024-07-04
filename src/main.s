@@ -3,6 +3,7 @@
 .include "src/system.s"
 .include "src/string.s"
 .include "src/print.s"
+.include "src/interpret.s"
 
 .global _start
 
@@ -53,6 +54,19 @@
     cmp         rax, TRUE
 .endm
 
+.macro p_repeat character time
+    malloc      \time
+    mov         rdi, rax
+    mov         rax, [\character]
+    mov         rcx, \time
+    rep stos    byte ptr [rdi]
+    sub         rdi, \time
+    mov         r12, rdi
+    mov         r13, \time
+    call        print_string
+    free        rdi, \time
+.endm
+
 .data
 
 help:               .ascii "Brainfuck interpreter\n"
@@ -82,6 +96,8 @@ memoryLabel:        .ascii "[Memory]"
 memoryLabelLen      = $ - memoryLabel
 outputLabel:        .ascii "[Output]"
 outputLabelLen      = $ - outputLabel
+pointerLabel:       .ascii "Pointer: "
+pointerLabelLen     = $ - pointerLabel
 
 partition.horizontalwall:     .byte 0xe2, 0x94, 0x80 # ─
 partition.verticalwall:       .byte 0xe2, 0x94, 0x82 # │
@@ -92,6 +108,8 @@ partition.bottomrightwall:    .byte 0xe2, 0x94, 0x98 # ┘
 
 bufferSize:         .quad BUFFER_SIZE
 currentProcess:     .quad 0
+finished:           .short FALSE
+pointer:            .quad 0
 
 fileFlagName1:      .asciz "-f"
 fileFlagName2:      .asciz "--file"
@@ -108,6 +126,7 @@ smcup:              .ascii "\033[?1049h"
 rmcup:              .ascii "\033[?1049l"
 clr:                .ascii "\033[2J\033[H"
 newline:            .ascii "\n"
+space:              .ascii " "
 
 /*
 struct sigaction {
@@ -135,7 +154,8 @@ sigaction_winch:
 .lcomm codeFlag SIZE_OF_POINTER
 .lcomm winsize 2 * SIZE_OF_SHORT
 .lcomm panelHeight SIZE_OF_SHORT /* floor(winsize.columns / 3) */
-
+.lcomm old_termios SIZEOF_TERMIOS
+.lcomm new_termios SIZEOF_TERMIOS
 
 .text
 
@@ -147,6 +167,7 @@ _start:
     push        rbp
     mov         rbp, rsp
 
+    call        config_terminal_settings
     lea         r14, [memory]
     /* argc */
     cmp         qword ptr [rsp + 8], 1
@@ -178,33 +199,47 @@ debug:
     xor         rdx, rdx
     mov         r10, 0x08
     syscall
-    pop         rsi
 
     call        init_debug_window
+    pop         rsi
+    jmp         input_process
+
+    /*
     mov         rax, SYS_FORK
     syscall
 
     mov         [currentProcess], rax
 
     cmp         qword ptr [currentProcess], 0
-    je          input_process
+    je          input_process*/
 win_resize_listener:
     pop         rsi
     mov         rax, SYS_PAUSE
     syscall
+    xor         rax, rax
+    mov         al, byte ptr [finished]
+    cmp         byte ptr [finished], TRUE
+    je          exit
     jmp         win_resize_listener
 
-    jmp         __main_cont2
 
 input_process:
     push        rsi
-    malloc      1
-    mov         rsi, rax
+    call        draw_debug_window
     mov         rax, SYS_READ
     mov         rdi, STDIN
+    lea         rsi, [inputBuffer]
     mov         rdx, 1
     syscall
+    mov         al, byte ptr [rsi]
+    cmp         al, '\n'
+    je          interpret_once
+    pop         rsi
     jmp         input_process
+interpret_once:
+    pop         rsi        
+    jmp         interpret
+    
 
 print_help:
     lea         r12, [help]
@@ -371,7 +406,41 @@ draw_memory_panel_topwall_loop:
     loop        draw_memory_panel_topwall_loop
     printunicode_nopreserve [partition.toprightwall]
     printchar   [newline]
+
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [space]
+
+    /* print the pointer label */
+    lea         r12, [pointerLabel]
+    mov         r13, pointerLabelLen
+    call        print_string
     
+    mov         r12, qword ptr [pointer]
+    mov         r13, 5
+    push        rsi
+    call        print_int_padded
+    pop         rsi
+
+    xor         rax, rax
+    mov         al, byte ptr [winsize + 2]
+    mov         r15, rax
+    sub         r15, pointerLabelLen
+    sub         r15, 8
+    p_repeat    space, r15
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [newline]
+
+    /* newline for a nice interface design */
+    printunicode_nopreserve [partition.verticalwall]
+    xor         rax, rax
+    mov         al, byte ptr [winsize + 2]
+    mov         r15, rax
+    sub         r15, 2
+    p_repeat    space, r15
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [newline]
+
+    /* end the panel */
     printunicode_nopreserve [partition.bottomleftwall]
     xor         rcx, rcx
     mov         cx, word ptr [winsize + 2]
@@ -478,115 +547,24 @@ close_file:
     syscall
     ret
 
-interpret:
-    cmp         byte ptr [rsi], NULL
-    je          end_of_file
-    cmp         byte ptr [rsi], '+'
-    je          increment
-    cmp         byte ptr [rsi], '-'
-    je          decrement
-    cmp         byte ptr [rsi], '>'
-    je          move_right
-    cmp         byte ptr [rsi], '<'
-    je          move_left
-    cmp         byte ptr [rsi], '['
-    je          loop_begin
-    cmp         byte ptr [rsi], ']'
-    je          loop_end
-    cmp         byte ptr [rsi], '.'
-    je          write
-    cmp         byte ptr [rsi], ','
-    je          read
-__interpret_done_step:
-    inc         rsi
-    jmp         interpret
 
-increment:
-    inc         byte ptr [r14]
-    jmp         __interpret_done_step
 
-decrement:
-    dec         byte ptr [r14]
-    jmp         __interpret_done_step
+config_terminal_settings:
+    /* save original terminal settings */
+    tcgets      [old_termios]
+    /* copy old settings into new settings */
+    tcgets      [new_termios]
+    /* modify new settings */
+    and         word ptr [new_termios + 12], CLEAR_FLAG
+    mov         byte ptr [new_termios + 18 + VMIN], 1
+    mov         byte ptr [new_termios + 18 + VTIME], 3
 
-move_right:
-    inc         r14
-    jmp         __interpret_done_step
-
-move_left:
-    dec         r14
-    jmp         __interpret_done_step
-
-loop_begin:
-    xor         rcx, rcx
-    cmp         byte ptr [r14], 0
-    je          skip_loop
-    push        rsi
-    jmp         __interpret_done_step
-
-skip_loop:
-    lodsb
-    cmp         al, '['
-    je          skip_new_loop_begin
-    cmp         al, ']'
-    je          close_loop
-__skip_loop_cont:
-    jmp         skip_loop
-
-skip_new_loop_begin:
-    inc         rcx
-    jmp         __skip_loop_cont
-
-close_loop:
-    dec         rcx
-    dec         rsi
-    cmp         rcx, 0
-    je          __interpret_done_step
-    inc         rsi
-    jmp         __skip_loop_cont
-
-loop_end:
-    cmp         byte ptr [r14], 0
-    je          jump_out
-    pop         rsi
-    /* because __interpret_done_step does  inc rsi and we want to cancel that */
-    dec         rsi
-    jmp         __interpret_done_step
-
-jump_out:
-    mov         rax, rsi
-    pop         rsi
-    mov         rsi, rax
-    jmp         __interpret_done_step
-
-write:
-    push        rsi
-    push        rcx
-    mov         r12, r14
-    mov         r13, 1
-    call        print_string
-    pop         rcx
-    pop         rsi
-    jmp         __interpret_done_step
-
-read:
-    push        rsi
-
-    lea         r12, [inputPrompt]
-    mov         r13, inputPromptLen
-    call        print_string
-
-    mov         rax, SYS_READ
+    mov         rax, SYS_IOCTL
     mov         rdi, STDIN
-    lea         rsi, [inputBuffer]
-    mov         rdx, 1
+    mov         rsi, TCSETS
+    lea         rdx, [new_termios]
     syscall
-
-    mov         al, byte ptr [inputBuffer]
-    mov         byte ptr [r14], al
-
-    pop         rsi
-    jmp         __interpret_done_step
+    ret
 
 reset_terminal:
     lea         r12, [rmcup]
@@ -601,6 +579,7 @@ winch_restorer:
     ret
 
 end_of_file:
+    mov         byte ptr [finished], TRUE
     cmp         byte ptr [debugFlagSet], TRUE
     je          reset_terminal
 __end_of_file_cont:
