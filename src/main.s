@@ -121,12 +121,16 @@ debugFlagName2:     .asciz "--debug"
 fileFlagSet:        .byte FALSE
 codeFlagSet:        .byte FALSE
 debugFlagSet:       .byte FALSE
+memoryOffset:       .quad memory
 
 smcup:              .ascii "\033[?1049h"
 rmcup:              .ascii "\033[?1049l"
 clr:                .ascii "\033[2J\033[H"
 newline:            .ascii "\n"
 space:              .ascii " "
+
+temp:               .ascii "000 "
+temp2:              .ascii "00000: "
 
 /*
 struct sigaction {
@@ -154,6 +158,8 @@ sigaction_winch:
 .lcomm codeFlag SIZE_OF_POINTER
 .lcomm winsize 2 * SIZE_OF_SHORT
 .lcomm panelHeight SIZE_OF_SHORT /* floor(winsize.columns / 3) */
+.lcomm pointersPerLine SIZE_OF_SHORT
+.lcomm memoryCellRows SIZE_OF_SHORT
 .lcomm old_termios SIZEOF_TERMIOS
 .lcomm new_termios SIZEOF_TERMIOS
 
@@ -335,14 +341,24 @@ update_dimensions:
     mov         bx, 3
     div         bx
     mov         [panelHeight], al
+
+    xor         rax, rax
+    mov         al, byte ptr [winsize + 2]
+    sub         ax, 10
+    mov         bx, 4
+    idiv        bx
+    mov         byte ptr [pointersPerLine], al
+
+    mov         al, byte ptr [panelHeight]
+    sub         al, 4
+    mov         byte ptr [memoryCellRows], al
+
+
     ret
 
 init_debug_window:
     call        update_dimensions
-    cmp         qword ptr [currentProcess], 0
-    jne          __skip_draw
     call        draw_debug_window
-__skip_draw:
     ret
 
 draw_debug_window:
@@ -439,6 +455,53 @@ draw_memory_panel_topwall_loop:
     p_repeat    space, r15
     printunicode_nopreserve [partition.verticalwall]
     printchar   [newline]
+
+    /* memory partition */
+    xor         rdx, rdx
+    xor         r10, r10
+print_cell_rows_loop:
+    push        rdx
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [space]
+    lea         r12, [temp2]
+    mov         r13, 7
+    call        print_string
+
+    xor         rcx, rcx
+    mov         cl, byte ptr [pointersPerLine]
+print_cells_loop:
+    push        rcx
+    xor         rax, rax
+    mov         rbx, [memoryOffset]
+    mov         al, byte ptr [rbx + r10]
+    mov         r12, rax
+    mov         r13, 3
+    push        r10
+    call        print_int_padded
+    pop         r10
+    printchar   [space]
+    pop         rcx
+    inc         r10
+    loop        print_cells_loop
+    printchar   [space]
+
+    xor         rax, rax
+    xor         rbx, rbx
+    mov         al, byte ptr [pointersPerLine]
+    imul        ax, 4
+    mov         bx, [winsize + 2]
+    sub         bx, ax
+    sub         bx, 11
+    mov         r15, rbx
+    p_repeat    space, r15
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [newline]
+
+    pop         rdx
+    inc         dl
+    cmp         dl, byte ptr [memoryCellRows]
+    jl          print_cell_rows_loop
+
 
     /* end the panel */
     printunicode_nopreserve [partition.bottomleftwall]
