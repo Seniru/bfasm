@@ -222,24 +222,6 @@ debug:
     pop         rsi
     jmp         input_process
 
-    /*
-    mov         rax, SYS_FORK
-    syscall
-
-    mov         [currentProcess], rax
-
-    cmp         qword ptr [currentProcess], 0
-    je          input_process*/
-win_resize_listener:
-    pop         rsi
-    mov         rax, SYS_PAUSE
-    syscall
-    xor         rax, rax
-    mov         al, byte ptr [finished]
-    cmp         byte ptr [finished], TRUE
-    je          exit
-    jmp         win_resize_listener
-
 
 input_process:
     push        rsi
@@ -414,13 +396,6 @@ draw_code_panel_topwall_loop:
     call        print_string
 
     call        print_code
-
-    lea         r12, [cyan]
-    mov         r13, 5
-    call        print_string
-    printunicode_nopreserve [partition.verticalwall]
-    printchar   [newline]
-
     
     printunicode_nopreserve [partition.bottomleftwall]
     xor         rcx, rcx
@@ -440,7 +415,7 @@ print_code:
     inc         rbx
     mov         rsi, qword ptr [code]
     xor         rcx, rcx
-    xor         rdx, rdx
+    mov         rdx, 2
 print_code_loop:
     inc         cx
     lodsb
@@ -546,9 +521,49 @@ print_code_end:
     sub         bx, cx
     sub         bx, 2
     mov         r15, rbx
+    push        rdx
     p_repeat    space, r15
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [newline]
+    pop         rdx
+    /* fill out the rest of the panel if the code is short */
+    xor         rcx, rcx
+    mov         cl, byte ptr [panelHeight]
+    cmp         rdx, rcx
+    jl          print_code_fill_remainder
+__print_code_end_cont:
+
     pop         rsi
     ret
+
+print_code_fill_remainder:
+    sub         rcx, rdx
+    sub         rcx, 1
+    xor         rax, rax
+    mov         al, byte ptr [winsize + 2]
+    mov         r15, rax
+    sub         r15, 2
+print_code_fill_remainder_loop:
+    push        rcx
+    # printchar_nopreserve [newline]
+    printunicode_nopreserve [partition.verticalwall]
+    p_repeat    space, r15
+
+    printunicode_nopreserve [partition.verticalwall]
+    printchar_nopreserve [newline]
+    pop         rcx
+    /* can't use loop because the loop label is out of reach according to stackoverflow */
+    /* https://stackoverflow.com/questions/22672809/why-does-the-loop-instruction-result-in-value-of-288-too-large-for-field-of-1 */
+    /* loop        print_code_fill_remainder_loop */
+    dec         rcx
+    cmp         rcx, 0
+    jg          print_code_fill_remainder_loop
+    jmp         __print_code_end_cont
+
+    
 
 draw_memory_panel:
     lea         r12, [cyan]
@@ -834,5 +849,11 @@ __end_of_file_cont:
     lea         r12, [runComplete]
     mov         r13, runCompleteLen
     call        print_string
-    
+    /* reset termio settings */
+    mov         rax, SYS_IOCTL
+    mov         rdi, STDIN
+    mov         rsi, TCSETS
+    lea         rdx, [old_termios]
+    syscall
+
     jmp         exit
