@@ -23,6 +23,7 @@ interpret:
     je          read
 __interpret_done_step:
     inc         rsi
+    mov         qword ptr [currentInstruction], rsi
 	cmp			byte ptr [debugFlagSet], TRUE
 	je			input_process
     jmp         interpret

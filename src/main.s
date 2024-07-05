@@ -126,11 +126,16 @@ memoryOffset:       .quad memory
 smcup:              .ascii "\033[?1049h"
 rmcup:              .ascii "\033[?1049l"
 clr:                .ascii "\033[2J\033[H"
+reset:              .ascii "\033[0m"
 bold:               .ascii "\033[1m"
-cyan:               .ascii "\033[36m"
+inverse:            .ascii "\033[7m"
+red:                .ascii "\033[31m"
 yellow:             .ascii "\033[33m"
 blue:               .ascii "\033[34m"
-reset:              .ascii "\033[0m"
+cyan:               .ascii "\033[36m"
+white:              .ascii "\033[37m"
+grey:               .ascii "\033[90m"
+fgWhite:            .ascii "\033[;100m"
 newline:            .ascii "\n"
 space:              .ascii " "
 
@@ -167,6 +172,8 @@ sigaction_winch:
 .lcomm memoryCellRows SIZE_OF_SHORT
 .lcomm old_termios SIZEOF_TERMIOS
 .lcomm new_termios SIZEOF_TERMIOS
+.lcomm code SIZE_OF_POINTER
+.lcomm currentInstruction SIZE_OF_POINTER
 
 .text
 
@@ -398,6 +405,22 @@ draw_code_panel_topwall_loop:
     loop        draw_code_panel_topwall_loop
     printunicode_nopreserve [partition.toprightwall]
     printchar   [newline]
+
+    /* code partition */
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [space]
+    lea         r12, [reset]
+    mov         r13, 4
+    call        print_string
+
+    call        print_code
+
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
+    printunicode_nopreserve [partition.verticalwall]
+    printchar   [newline]
+
     
     printunicode_nopreserve [partition.bottomleftwall]
     xor         rcx, rcx
@@ -409,6 +432,122 @@ draw_code_panel_bottomwall_loop:
     pop         rcx
     loop        draw_code_panel_bottomwall_loop
     printunicode_nopreserve [partition.bottomrightwall]
+    ret
+
+print_code:
+    push        rsi
+    mov         rbx, qword ptr [currentInstruction]
+    inc         rbx
+    mov         rsi, qword ptr [code]
+    xor         rcx, rcx
+    xor         rdx, rdx
+print_code_loop:
+    inc         cx
+    lodsb
+    cmp         rsi, rbx
+    je          highlight_current_operator
+__print_code_loop_cont:
+    cmp         al, NULL
+    je          print_code_end
+    cmp         al, '\n'
+    je          print_code_newline
+
+    pushr       rax, rsi, rcx, rdx, rbx
+    dec         rsi
+    call        highlight_operator
+    lea         r12, [reset]
+    mov         r13, 4
+    call        print_string
+    popr        rbx, rdx, rcx, rsi, rax
+
+    jmp         print_code_loop
+
+highlight_operator:
+    push        rsi
+    
+    lea         r12, [grey]
+    lea         rax, [red]
+    mov         r13, 5
+    mov         rbx, 5
+
+    cmp         byte ptr [rsi], '<'
+    cmove       r12, rax
+    cmp         byte ptr [rsi], '>'
+    cmove       r12, rax
+
+    lea         rax, [blue]
+    cmp         byte ptr [rsi], '+'
+    cmove       r12, rax
+    cmp         byte ptr [rsi], '-'
+    cmove       r12, rax
+
+    lea         rax, [white]
+    cmp         byte ptr [rsi], '['
+    cmove       r12, rax
+    cmp         byte ptr [rsi], ']'
+    cmove       r12, rax
+    cmp         byte ptr [rsi], '.'
+    cmove       r12, rax
+    cmp         byte ptr [rsi], ','
+    cmove       r12, rax
+    
+    mov         r13, 5
+    call        print_string
+
+    pop         rsi
+    push        rsi
+    mov         r12, rsi
+    mov         r13, 1
+    call        print_string
+    lea         r12, [reset]
+    mov         r13, 4
+    call        print_string
+    pop         rsi
+    ret
+
+highlight_current_operator:
+    pushr       rsi, rax, rbx, rcx, rdx
+    lea         r12, [fgWhite]
+    mov         r13, 7
+    call        print_string
+    popr        rdx, rcx, rbx, rax, rsi
+    jmp         __print_code_loop_cont
+
+print_code_newline:
+    inc         rdx
+    cmp         dl, byte ptr [panelHeight]
+    je          print_code_end
+    push        rbx
+    xor         rbx, rbx
+    add         cx, 2
+    mov         bl, byte ptr [winsize + 2]
+    sub         bx, cx
+    mov         r15, rbx
+    pushr       rsi, rdx
+    p_repeat    space, r15
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
+    printunicode [partition.verticalwall]
+    printchar   [newline]
+    printunicode [partition.verticalwall]
+    lea         r12, [reset]
+    mov         r13, 4
+    call        print_string
+    printchar   [space]
+    popr        rdx, rsi
+    xor         rcx, rcx
+    pop         rbx
+    jmp         print_code_loop
+
+print_code_end:
+    xor         rbx, rbx
+    mov         bl, byte ptr [winsize + 2]
+    sub         bx, cx
+    sub         bx, 2
+    mov         r15, rbx
+    p_repeat    space, r15
+    pop         rsi
     ret
 
 draw_memory_panel:
@@ -594,6 +733,7 @@ draw_output_panel_bottomwall_loop:
 
 handle_code:
     mov        rsi, qword ptr [codeFlag]
+    mov        qword ptr [code], rsi
     jmp         __main_cont1
 
 handle_file:
@@ -644,6 +784,8 @@ read_file:
     mov         rdi, [fileDesc]
     mov         rdx, r15
     syscall
+
+    mov         qword ptr [code], rsi
 
     ret
 
