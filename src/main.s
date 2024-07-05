@@ -138,9 +138,8 @@ grey:               .ascii "\033[90m"
 fgWhite:            .ascii "\033[;100m"
 newline:            .ascii "\n"
 space:              .ascii " "
+colon:              .ascii ": "
 
-temp:               .ascii "000 "
-temp2:              .ascii "00000: "
 
 /*
 struct sigaction {
@@ -651,8 +650,18 @@ print_cell_rows_loop:
     lea         r12, [blue]
     mov         r13, 5
     call        print_string
-    lea         r12, [temp2]
-    mov         r13, 7
+    pop         rdx
+    push        rdx
+    xor         rax, rax
+    push        r10
+    mov         al, byte ptr [pointersPerLine]
+    imul        dl
+    mov         r12, rax
+    mov         r13, 5
+    call        print_int_padded
+    pop         r10
+    lea         r12, [colon]
+    mov         r13, 2
     call        print_string
     lea         r12, [reset]
     mov         r13, 4
