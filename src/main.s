@@ -126,6 +126,11 @@ memoryOffset:       .quad memory
 smcup:              .ascii "\033[?1049h"
 rmcup:              .ascii "\033[?1049l"
 clr:                .ascii "\033[2J\033[H"
+bold:               .ascii "\033[1m"
+cyan:               .ascii "\033[36m"
+yellow:             .ascii "\033[33m"
+blue:               .ascii "\033[34m"
+reset:              .ascii "\033[0m"
 newline:            .ascii "\n"
 space:              .ascii " "
 
@@ -353,7 +358,6 @@ update_dimensions:
     sub         al, 4
     mov         byte ptr [memoryCellRows], al
 
-
     ret
 
 init_debug_window:
@@ -376,6 +380,9 @@ draw_debug_window:
 draw_code_panel:
     printunicode_nopreserve [partition.topleftwall]
     printunicode_nopreserve [partition.horizontalwall]
+    lea         r12, [bold]
+    mov         r13, 4
+    call        print_string
     lea         r12, [codeLabel]
     mov         r13, codeLabelLen
     call        print_string
@@ -405,8 +412,14 @@ draw_code_panel_bottomwall_loop:
     ret
 
 draw_memory_panel:
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
     printunicode_nopreserve [partition.topleftwall]
     printunicode_nopreserve [partition.horizontalwall]
+    lea         r12, [bold]
+    mov         r13, 4
+    call        print_string
     lea         r12, [memoryLabel]
     mov         r13, memoryLabelLen
     call        print_string
@@ -424,11 +437,20 @@ draw_memory_panel_topwall_loop:
     printchar   [newline]
 
     printunicode_nopreserve [partition.verticalwall]
+    lea         r12, [reset]
+    mov         r13, 4
+    call        print_string
     printchar   [space]
 
     /* print the pointer label */
+    lea         r12, [yellow]
+    mov         r13, 5
+    call        print_string
     lea         r12, [pointerLabel]
     mov         r13, pointerLabelLen
+    call        print_string
+    lea         r12, [reset]
+    mov         r13, 4
     call        print_string
     
     mov         r12, qword ptr [pointer]
@@ -443,10 +465,16 @@ draw_memory_panel_topwall_loop:
     sub         r15, pointerLabelLen
     sub         r15, 8
     p_repeat    space, r15
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
     printunicode_nopreserve [partition.verticalwall]
     printchar   [newline]
 
     /* newline for a nice interface design */
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
     printunicode_nopreserve [partition.verticalwall]
     xor         rax, rax
     mov         al, byte ptr [winsize + 2]
@@ -461,10 +489,19 @@ draw_memory_panel_topwall_loop:
     xor         r10, r10
 print_cell_rows_loop:
     push        rdx
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
     printunicode_nopreserve [partition.verticalwall]
     printchar   [space]
+    lea         r12, [blue]
+    mov         r13, 5
+    call        print_string
     lea         r12, [temp2]
     mov         r13, 7
+    call        print_string
+    lea         r12, [reset]
+    mov         r13, 4
     call        print_string
 
     xor         rcx, rcx
@@ -494,6 +531,9 @@ print_cells_loop:
     sub         bx, 11
     mov         r15, rbx
     p_repeat    space, r15
+    lea         r12, [cyan]
+    mov         r13, 5
+    call        print_string
     printunicode_nopreserve [partition.verticalwall]
     printchar   [newline]
 
@@ -520,6 +560,9 @@ draw_memory_panel_bottomwall_loop:
 draw_output_panel:
     printunicode_nopreserve [partition.topleftwall]
     printunicode_nopreserve [partition.horizontalwall]
+    lea         r12, [bold]
+    mov         r13, 4
+    call        print_string
     lea         r12, [outputLabel]
     mov         r13, outputLabelLen
     call        print_string
