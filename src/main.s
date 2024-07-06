@@ -94,7 +94,7 @@ codeLabel:          .ascii "[Code]"
 codeLabelLen        = $ - codeLabel
 memoryLabel:        .ascii "[Memory]"
 memoryLabelLen      = $ - memoryLabel
-outputLabel:        .ascii "[Output]"
+outputLabel:        .ascii "\033[0m\033[1;7m Output"
 outputLabelLen      = $ - outputLabel
 pointerLabel:       .ascii "Pointer: "
 pointerLabelLen     = $ - pointerLabel
@@ -110,6 +110,7 @@ bufferSize:         .quad BUFFER_SIZE
 currentProcess:     .quad 0
 finished:           .short FALSE
 pointer:            .quad 0
+outputBufferPos:    .quad 0
 
 fileFlagName1:      .asciz "-f"
 fileFlagName2:      .asciz "--file"
@@ -135,7 +136,7 @@ blue:               .ascii "\033[34m"
 cyan:               .ascii "\033[36m"
 white:              .ascii "\033[37m"
 grey:               .ascii "\033[90m"
-fgWhite:            .ascii "\033[;100m"
+bgWhite:            .ascii "\033[;100m"
 newline:            .ascii "\n"
 space:              .ascii " "
 colon:              .ascii ": "
@@ -173,6 +174,7 @@ sigaction_winch:
 .lcomm new_termios SIZEOF_TERMIOS
 .lcomm code SIZE_OF_POINTER
 .lcomm currentInstruction SIZE_OF_POINTER
+.lcomm outputBuffer 1024 /* 1kb */
 
 .text
 
@@ -481,7 +483,7 @@ highlight_operator:
 
 highlight_current_operator:
     pushr       rsi, rax, rbx, rcx, rdx
-    lea         r12, [fgWhite]
+    lea         r12, [bgWhite]
     mov         r13, 7
     call        print_string
     popr        rdx, rcx, rbx, rax, rsi
@@ -721,37 +723,22 @@ draw_memory_panel_bottomwall_loop:
 
 
 draw_output_panel:
-    printunicode_nopreserve [partition.topleftwall]
-    printunicode_nopreserve [partition.horizontalwall]
-    lea         r12, [bold]
-    mov         r13, 4
-    call        print_string
     lea         r12, [outputLabel]
     mov         r13, outputLabelLen
     call        print_string
-    /* calculate how much columns left to fill */
     xor         rcx, rcx
     mov         cx, word ptr [winsize + 2]
-    sub         cx, outputLabelLen
-    sub         cx, 3
-draw_output_panel_topwall_loop:
-    push        rcx
-    printunicode_nopreserve [partition.horizontalwall]
-    pop         rcx
-    loop        draw_output_panel_topwall_loop
-    printunicode_nopreserve [partition.toprightwall]
-    printchar   [newline]
-    
-    printunicode_nopreserve [partition.bottomleftwall]
-    xor         rcx, rcx
-    mov         cx, word ptr [winsize + 2]
-    sub         cx, 2
-draw_output_panel_bottomwall_loop:
-    push        rcx
-    printunicode_nopreserve [partition.horizontalwall]
-    pop         rcx
-    loop        draw_output_panel_bottomwall_loop
-    printunicode_nopreserve [partition.bottomrightwall]
+    sub         cx, 7
+    mov         r15, rcx
+    p_repeat    [space], r15
+    lea         r12, [reset]
+    mov         r13, 4
+    call        print_string
+    printchar_nopreserve [newline]
+
+    lea         r12, [outputBuffer]
+    mov         r13, qword ptr [outputBufferPos]
+    call        print_string
     ret
 
 

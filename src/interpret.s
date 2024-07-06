@@ -94,6 +94,13 @@ write:
     mov         r12, r14
     mov         r13, 1
     call        print_string
+    
+    lea         rsi, [outputBuffer]
+    add         rsi, qword ptr [outputBufferPos]
+    mov         cl, byte ptr [r14]
+    mov         byte ptr [rsi], cl
+    inc         qword ptr [outputBufferPos]
+    
     pop         rcx
     pop         rsi
     jmp         __interpret_done_step
