@@ -24,8 +24,8 @@ interpret:
 __interpret_done_step:
     inc         rsi
     mov         qword ptr [currentInstruction], rsi
-	cmp         byte ptr [debugFlagSet], TRUE
-	je          input_process
+    cmp         byte ptr [debugFlagSet], TRUE
+    je          input_process
     jmp         interpret
 
 increment:
@@ -38,12 +38,12 @@ decrement:
 
 move_right:
     inc         r14
-	inc			qword ptr [pointer]
+    inc			qword ptr [pointer]
     jmp         __interpret_done_step
 
 move_left:
     dec         r14
-	dec         qword ptr [pointer]
+    dec         qword ptr [pointer]
     jmp         __interpret_done_step
 
 loop_begin:
