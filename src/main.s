@@ -673,6 +673,8 @@ print_cell_rows_loop:
     mov         cl, byte ptr [pointersPerLine]
 print_cells_loop:
     push        rcx
+    cmp         r10, qword ptr [pointer]
+    je          highlight_current_cell
     xor         rax, rax
     mov         rbx, [memoryOffset]
     mov         al, byte ptr [rbx + r10]
@@ -681,6 +683,7 @@ print_cells_loop:
     push        r10
     call        print_int_padded
     pop         r10
+__print_cells_loop_cont:
     printchar   [space]
     pop         rcx
     inc         r10
@@ -720,6 +723,26 @@ draw_memory_panel_bottomwall_loop:
     loop        draw_memory_panel_bottomwall_loop
     printunicode_nopreserve [partition.bottomrightwall]
     ret
+
+highlight_current_cell:
+    lea         r12, [bgWhite]
+    mov         r13, 7
+    call        print_string
+    
+    xor         rax, rax
+    mov         rbx, [memoryOffset]
+    mov         al, byte ptr [rbx + r10]
+    mov         r12, rax
+    mov         r13, 3
+    push        r10
+    call        print_int_padded
+
+    lea         r12, [reset]
+    mov         r13, 4
+    call        print_string
+    pop         r10
+
+    jmp         __print_cells_loop_cont
 
 
 draw_output_panel:
