@@ -11,6 +11,7 @@
 .equ NUM_CELLS,             30000
 .equ CELL_WIDTH_BITS,       8
 .equ BUFFER_SIZE,           2
+.equ ESCAPE_CHARACTER,      27
 
 .macro printr register=rax
     mov         r12, \register
@@ -111,6 +112,7 @@ currentProcess:     .quad 0
 finished:           .short FALSE
 pointer:            .quad 0
 outputBufferPos:    .quad 0
+scrollY:            .short 0
 
 fileFlagName1:      .asciz "-f"
 fileFlagName2:      .asciz "--file"
@@ -163,7 +165,7 @@ sigaction_winch:
 .lcomm memory NUM_CELLS * CELL_WIDTH_BITS
 .lcomm fileDesc SIZE_OF_INT
 .lcomm fileBuffer SIZE_OF_POINTER
-.lcomm inputBuffer 1
+.lcomm inputBuffer 2
 .lcomm fileFlag SIZE_OF_POINTER
 .lcomm codeFlag SIZE_OF_POINTER
 .lcomm winsize 2 * SIZE_OF_SHORT
@@ -235,12 +237,49 @@ input_process:
     mov         al, byte ptr [rsi]
     cmp         al, '\n'
     je          interpret_once
+    cmp         al, ESCAPE_CHARACTER
+    je          handle_escapes
     pop         rsi
     jmp         input_process
 interpret_once:
     pop         rsi        
     jmp         interpret
-    
+
+handle_escapes:
+    /* get the sequence */
+    mov         rax, SYS_READ
+    mov         rdi, STDIN
+    lea         rsi, [inputBuffer]
+    mov         rdx, 2
+    syscall
+
+    xor         rax, rax
+    mov         al, byte ptr [rsi + 1]
+    cmp         al, 'A'
+    je          scroll_up
+    cmp         al, 'B'
+    je          scroll_down
+
+    pop         rsi
+    jmp         input_process
+
+scroll_down:
+    inc         word ptr [scrollY]
+    pop         rsi
+    jmp         input_process
+
+scroll_up:
+    dec         word ptr [scrollY]
+    cmp         word ptr [scrollY], 0
+    jle         scroll_reset_up
+    pop         rsi
+    jmp         input_process
+
+scroll_reset_up:
+    mov         word ptr [scrollY], 0
+    pop         rsi
+    jmp         input_process
+
 
 print_help:
     lea         r12, [help]
@@ -641,7 +680,11 @@ draw_memory_panel_topwall_loop:
 
     /* memory partition */
     xor         rdx, rdx
-    xor         r10, r10
+    /* r10 is the starting cell */
+    xor         rax, rax
+    mov         ax, word ptr [scrollY]
+    imul        ax, [pointersPerLine]
+    mov         r10, rax
 print_cell_rows_loop:
     push        rdx
     lea         r12, [cyan]
@@ -652,8 +695,10 @@ print_cell_rows_loop:
     lea         r12, [blue]
     mov         r13, 5
     call        print_string
+
     pop         rdx
     push        rdx
+    add         dx, word ptr [scrollY]
     xor         rax, rax
     push        r10
     mov         al, byte ptr [pointersPerLine]
