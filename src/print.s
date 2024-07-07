@@ -3,12 +3,13 @@
 .data
 
 negative:       .ascii "-"
+zero:           .ascii "0"
 
 .global print_string
 .global print_usigned_int
 .global print_signed_int
 .global printf
-
+.global print_int_padded
 
 .text
 
@@ -110,6 +111,51 @@ print_negative_sign:
     pop         r12
     neg         r12
     jmp         print_signed_int_cont
+
+/*
+    Print an integer, and pads the output with 0s infront as necessary
+
+    Input registers:
+        r12: num
+        r13: width
+
+    Modifies: rax, rbx, rcx, rdx
+
+    See also: print_string, print_usigned_int
+*/
+print_int_padded:
+    pushr       r12, r13
+    mov         rcx, r13
+    dec         rcx
+    cmp         rcx, 1
+    jle         normal_print
+    cmp         r12, 0
+    mov         rdx, 1
+    mov         rbx, 0
+    cmove       rbx, rdx
+    sub         rcx, rbx
+    mov         rax, 1
+raise_up:
+    imul        rax, 10
+    loop        raise_up
+
+is_size_less:
+    cmp         r12, rax
+    jnl         normal_print
+    pushr       r12, r13, rax
+    lea         r12, [zero]
+    mov         r13, 1
+    call        print_string
+    popr        rax, r13, r12
+    xor         rdx, rdx
+    mov         rbx, 10
+    idiv        rbx
+    jmp         is_size_less
+
+normal_print:
+    call        print_usigned_int   
+    popr        r13, r12
+    ret
 
 /*
     Own implementation of C's printf (formatted print)

@@ -20,6 +20,12 @@
 .equ SYS_LSEEK,				8
 .equ SYS_MMAP,              9
 .equ SYS_MUNMAP,            11
+.equ SYS_RT_SIGACTION,      13
+.equ SYS_RT_SIGRETURN,      15
+.equ SYS_IOCTL,             16
+.equ SYS_PAUSE,             34
+.equ SYS_FORK,              57
+.equ SYS_VFORK,             58
 .equ SYS_EXIT,              60
 
 /*  flags, options, etc. */
@@ -31,6 +37,20 @@
 .equ SEEK_SET,				0
 .equ SEEK_END,				2
 .equ ENOENT,				-2
+.equ SIG_WINCH,             28
+
+/* termio constants */
+.equ SIZEOF_TERMIOS,        34
+.equ TCGETS,                0x5401
+.equ TCSETS,                0x5402
+.equ TIOCGWINSZ,            0x5413
+.equ ICANON,                0x02
+.equ ECHO,                  0X08
+.equ VMIN,                  6
+.equ VTIME,                 5
+.equ CLEAR_FLAG,            0xff & ~(ICANON | ECHO)
+
+
 
 .global malloc
 .global free
@@ -103,6 +123,17 @@
     call        munmap
     pop         r13
     pop         r12
+.endm
+
+/*
+    Convinience macro for ioctl tcgets syscall
+*/
+.macro tcgets struct
+    mov         rax, SYS_IOCTL
+    mov         rdi, STDIN
+    mov         rsi, TCGETS
+    lea         rdx, [\struct]
+    syscall
 .endm
 
 .text
