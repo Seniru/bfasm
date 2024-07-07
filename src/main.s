@@ -109,10 +109,16 @@ partition.bottomrightwall:    .byte 0xe2, 0x94, 0x98 # ┘
 
 bufferSize:         .quad BUFFER_SIZE
 currentProcess:     .quad 0
-finished:           .short FALSE
 pointer:            .quad 0
 outputBufferPos:    .quad 0
 scrollY:            .short 0
+curInstDisplayable: .byte TRUE
+finished:           .short FALSE
+fileFlagSet:        .byte FALSE
+codeFlagSet:        .byte FALSE
+debugFlagSet:       .byte FALSE
+memoryOffset:       .quad memory
+codeOffset:         .quad 0
 
 fileFlagName1:      .asciz "-f"
 fileFlagName2:      .asciz "--file"
@@ -120,11 +126,6 @@ codeFlagName1:      .asciz "-c"
 codeFlagName2:      .asciz "--code"
 debugFlagName1:     .asciz "-d"
 debugFlagName2:     .asciz "--debug"
-
-fileFlagSet:        .byte FALSE
-codeFlagSet:        .byte FALSE
-debugFlagSet:       .byte FALSE
-memoryOffset:       .quad memory
 
 smcup:              .ascii "\033[?1049h"
 rmcup:              .ascii "\033[?1049l"
@@ -202,6 +203,7 @@ _start:
     je          handle_code
 
 __main_cont1:
+    mov         qword ptr [currentInstruction], rsi
     cmp         byte ptr [debugFlagSet], TRUE
     je          debug
 __main_cont2:
@@ -220,15 +222,21 @@ debug:
     xor         rdx, rdx
     mov         r10, 0x08
     syscall
-
     call        init_debug_window
     pop         rsi
     jmp         input_process
+   
 
 
 input_process:
     push        rsi
+redraw_debug_window:
+    xor         rax, rax
     call        draw_debug_window
+     /* if return from draw_debug_window is 1, a redraw is requested */
+    cmp         rax, 1
+    je          redraw_debug_window
+
     mov         rax, SYS_READ
     mov         rdi, STDIN
     lea         rsi, [inputBuffer]
@@ -402,8 +410,12 @@ draw_debug_window:
     call        draw_memory_panel
     printchar   [newline]
     call        draw_code_panel
+    cmp         rax, 1
+    je          __draw_debug_window_ret
     printchar   [newline]
     call        draw_output_panel
+    xor         rax, rax
+__draw_debug_window_ret:
     ret
 
 draw_code_panel:
@@ -436,6 +448,8 @@ draw_code_panel_topwall_loop:
     call        print_string
 
     call        print_code
+    cmp         rax, 1
+    je          __draw_code_panel_ret
     
     printunicode_nopreserve [partition.bottomleftwall]
     xor         rcx, rcx
@@ -447,13 +461,18 @@ draw_code_panel_bottomwall_loop:
     pop         rcx
     loop        draw_code_panel_bottomwall_loop
     printunicode_nopreserve [partition.bottomrightwall]
+    xor         rax, rax
+__draw_code_panel_ret:
     ret
 
 print_code:
+    mov         byte ptr [curInstDisplayable], FALSE
     push        rsi
     mov         rbx, qword ptr [currentInstruction]
     inc         rbx
     mov         rsi, qword ptr [code]
+    #add         rsi, 4
+    add         rsi, qword ptr [codeOffset]
     xor         rcx, rcx
     mov         rdx, 2
 print_code_loop:
@@ -521,6 +540,8 @@ highlight_operator:
     ret
 
 highlight_current_operator:
+    mov         byte ptr [curInstDisplayable], TRUE
+
     pushr       rsi, rax, rbx, rcx, rdx
     lea         r12, [bgWhite]
     mov         r13, 7
@@ -556,6 +577,11 @@ print_code_newline:
     jmp         print_code_loop
 
 print_code_end:
+    /* check if we could display the current instruction */
+    xor         rax, rax    
+    cmp         byte ptr [curInstDisplayable], FALSE
+    je         adjust_code_buffer
+    
     xor         rbx, rbx
     mov         bl, byte ptr [winsize + 2]
     sub         bx, cx
@@ -575,9 +601,23 @@ print_code_end:
     cmp         rdx, rcx
     jl          print_code_fill_remainder
 __print_code_end_cont:
-
+    xor         rax, rax
     pop         rsi
     ret
+
+adjust_code_buffer:
+    mov         rbx, qword ptr [code]
+    mov         rsi, qword ptr [currentInstruction]
+    #sub         qword ptr [codeOffset], rsi
+    sub         rsi, rbx
+    #printr      rbx
+    #mov         qword ptr [codeOffset], rbx
+    mov         qword ptr [codeOffset], rsi
+    /* return with 1 to indicate redraw */
+    mov         rax, 1
+    pop         rsi
+    ret
+
 
 print_code_fill_remainder:
     sub         rcx, rdx
