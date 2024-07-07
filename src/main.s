@@ -113,7 +113,6 @@ pointer:            .quad 0
 outputBufferPos:    .quad 0
 scrollY:            .short 0
 curInstDisplayable: .byte TRUE
-finished:           .short FALSE
 fileFlagSet:        .byte FALSE
 codeFlagSet:        .byte FALSE
 debugFlagSet:       .byte FALSE
@@ -946,7 +945,6 @@ winch_restorer:
     ret
 
 end_of_file:
-    mov         byte ptr [finished], TRUE
     cmp         byte ptr [debugFlagSet], TRUE
     je          reset_terminal
 __end_of_file_cont:
