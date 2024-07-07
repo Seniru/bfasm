@@ -27,6 +27,7 @@ test "./bf --file ./test/left-right.bf" $'\005\003\005'
 test "./bf --file ./test/loop.bf" $'\005\001\001\002\003\004\005'
 test "./bf --file ./test/nested-loops.bf" $'\024' # 20 base 10 = 24 base 8
 test "./bf --file ./test/simple-if.bf" "10"
+test "./test/input.bf.sh" $'\nProgram input: adf'
 
 echo
 echo "Test #2"
