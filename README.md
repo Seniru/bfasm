@@ -1,14 +1,23 @@
 
 # bfasm
-> Brainfuck interpreter written in Assembly
+> Brainfuck interpreter and debugger written in Assembly
 
 ### Usage
 ```bat
-Usage: ./bf [--file filename | --code code]
+Usage: ./bf [options] [--file filename | --code code]
+-f, --file filename :	Read the code from the file
+-c, --code code :	Program passed in as a string
+
 Options:
--f, --file filename :   Read the code from the file
--c, --code code :       Program passed in as a string
+-d, --debug :	Start the program in the debugging mode
 ```
+
+### Features
+
+- Brainfuck interpreter:
+  - Interpret Brainfuck code from a file (`--file [filename]` option) or pass the code as an argument (`--code [code]` option)
+- Debugger:
+  - Enter the debugging mode with the `--debug` option. This debugger is heavily inspired from the GDB's designs. The debugger includes 3 layouts for memory, code and output. Press enter key to step into the next instruction. Scroll support is enabled for memory viewer. 
 
 ### About Brainfuck
 
@@ -37,6 +46,20 @@ Reason number two is that brainfuck feels very close to assembly. It is just inc
 
 
 ### Building
+
+This project uses system calls provided by Linux so right now this project only supports Linux platforms.
+
+Tested on Ubuntu 22.04.4 LTS x86_64 
+
+Following tools are required for building
+- gcc (this project uses the `as` assembler provided by gcc)
+- make
+- Additionally, you will require git if you want to clone
+
+Check your distribution's documentation on how to install these.
+
+To make this project follow these steps
+
 ```bash
 # first clone the repo
 git clone https://github.com/Seniru/bfasm
