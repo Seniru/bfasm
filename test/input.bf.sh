@@ -1,3 +1,3 @@
 #! /bin/sh
 
-(echo a; echo b; echo c;) | ./bf --file ./test/input.bf
+(echo -n a; echo -n b; echo -n c;) | ./bf --file ./test/input.bf
