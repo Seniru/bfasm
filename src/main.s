@@ -12,6 +12,7 @@
 .equ CELL_WIDTH_BITS,       8
 .equ BUFFER_SIZE,           2
 .equ ESCAPE_CHARACTER,      27
+.equ OUTPUT_BUFFER_SIZE,    1024
 
 .macro printr register=rax
     mov         r12, \register
@@ -82,8 +83,8 @@ filenotfound:       .ascii "File not found.\n"
 filenotfoundLen     = $ - filenotfound
 runComplete:        .ascii "\nProgram completed!\n"
 runCompleteLen      = $ - runComplete
-inputPrompt:        .ascii "\nProgram input: "
-inputPromptLen      = $ - inputPrompt
+/* inputPrompt:        .ascii "\nProgram input: "
+inputPromptLen      = $ - inputPrompt */
 errAmbigiousFlag:   .ascii "Error: Ambibious flag\n"
 errAmbigiousFlagLen = $ - errAmbigiousFlag
 errUnknownFlag:     .ascii "Error: Unknown flag\n"
@@ -176,7 +177,7 @@ sigaction_winch:
 .lcomm new_termios SIZEOF_TERMIOS
 .lcomm code SIZE_OF_POINTER
 .lcomm currentInstruction SIZE_OF_POINTER
-.lcomm outputBuffer 1024 /* 1kb */
+.lcomm outputBuffer OUTPUT_BUFFER_SIZE /* 1kb */
 
 .text
 

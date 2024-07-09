@@ -2,6 +2,8 @@
 
 .global interpret
 
+.equ OUTPUT_BUFFER_SIZE,        3
+
 interpret:
     cmp         byte ptr [rsi], NULL
     je          end_of_file
@@ -95,22 +97,31 @@ write:
     mov         r13, 1
     call        print_string
     
+    cmp         byte ptr [debugFlagSet], TRUE
+    je          write_debug_output
+__write_cont:    
+
+    pop         rcx
+    pop         rsi
+    jmp         __interpret_done_step
+
+write_debug_output:
+    cmp         qword ptr [outputBufferPos], OUTPUT_BUFFER_SIZE
+    jge         debug_output_reset
+__write_debug_output_cont:
     lea         rsi, [outputBuffer]
     add         rsi, qword ptr [outputBufferPos]
     mov         cl, byte ptr [r14]
     mov         byte ptr [rsi], cl
     inc         qword ptr [outputBufferPos]
-    
-    pop         rcx
-    pop         rsi
-    jmp         __interpret_done_step
+    jmp         __write_cont
+
+debug_output_reset:
+    mov         qword ptr [outputBufferPos], 0
+    jmp         __write_debug_output_cont
 
 read:
     push        rsi
-
-    lea         r12, [inputPrompt]
-    mov         r13, inputPromptLen
-    call        print_string
 
     mov         rax, SYS_READ
     mov         rdi, STDIN
